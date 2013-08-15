@@ -7,40 +7,103 @@
 //
 
 #import "AppDelegate.h"
+#import "CCCryptHelper.h"
 
 @implementation AppDelegate
 
+@synthesize splashView;
+@synthesize window;
+
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
-    // Override point for customization after application launch.
+    //Clear keychain on first run in case of reinstallation
+    if (![[NSUserDefaults standardUserDefaults] objectForKey:@"HazRun"]) {
+        NSArray *secItemClasses = @[(__bridge id)kSecClassGenericPassword,
+                                    (__bridge id)kSecClassInternetPassword,
+                                    (__bridge id)kSecClassCertificate,
+                                    (__bridge id)kSecClassKey,
+                                    (__bridge id)kSecClassIdentity];
+        for (id secItemClass in secItemClasses) {
+            NSDictionary *spec = @{(__bridge id)kSecClass:secItemClass};
+            SecItemDelete((__bridge CFDictionaryRef)spec);
+        }
+        [[NSUserDefaults standardUserDefaults] setValue:@"TRUE" forKey:@"HazRun"];
+    }
+    
     return YES;
+}
+
+- (void)removeSplash:(NSNotification *)notification {
+    // iterates through subviews and finds the Splash screen (by tag number) and removes it from the stack to allow app interaction.
+    // this is a callback for the OSValidMasterPasswordNotification NSNotification.
+    for (UIView *subview in window.subviews) {
+        subview.userInteractionEnabled = TRUE;
+        if (subview.tag == 24) {
+            [subview removeFromSuperview];
+        }
+    }
+}
+
+- (void)dismissAlertViews:(NSArray *)subviews {
+    // iterate through subviews and remove any UIAlertViews that are found. If the user enters an incorrect password they have to background and relaunch the application to try again due to a prevantative UIAlertView. We need to make sure we remove it so when the app is relaunched it doesn't prevent usability if the correct password was entered.
+    Class AVClass = [UIAlertView class];
+    for (UIView * subview in subviews){
+        if ([subview isKindOfClass:AVClass]){
+            [(UIAlertView *)subview dismissWithClickedButtonIndex:[(UIAlertView *)subview cancelButtonIndex] animated:NO];
+        } else {
+            [self dismissAlertViews:subview.subviews];
+        }
+    }
 }
 							
 - (void)applicationWillResignActive:(UIApplication *)application
 {
-    // Sent when the application is about to move from active to inactive state. This can occur for certain types of temporary interruptions (such as an incoming phone call or SMS message) or when the user quits the application and it begins the transition to the background state.
-    // Use this method to pause ongoing tasks, disable timers, and throttle down OpenGL ES frame rates. Games should use this method to pause the game.
 }
 
 - (void)applicationDidEnterBackground:(UIApplication *)application
 {
-    // Use this method to release shared resources, save user data, invalidate timers, and store enough application state information to restore your application to its current state in case it is terminated later. 
-    // If your application supports background execution, this method is called instead of applicationWillTerminate: when the user quits.
+    // dismiss alert views in case the user entered an incorrect password
+    [self dismissAlertViews:application.windows];
+    // push a blank splash screen onto the view stack to hide sensitive info from unauthd view
+    splashView = [[UIImageView alloc] initWithFrame:CGRectMake(0,0, 320, 480)];
+    splashView.image = [UIImage imageNamed:@"Default.png"];
+    splashView.tag = 24;
+    // some defense in depth. even though users should never interact with the splash screen make sure screen touches arent passed to the underlying views
+    for (UIView *subview in window.subviews) {
+        subview.userInteractionEnabled = FALSE;
+        if (subview.tag == 24) {
+            return;
+        }
+    }
+    [window addSubview:splashView];
 }
 
 - (void)applicationWillEnterForeground:(UIApplication *)application
 {
-    // Called as part of the transition from the background to the inactive state; here you can undo many of the changes made on entering the background.
 }
 
 - (void)applicationDidBecomeActive:(UIApplication *)application
 {
-    // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
+    // dismiss alert views in case the user entered an incorrect password
+    [self dismissAlertViews:application.windows];
+    // push a blank splash screen onto the view stack to hide sensitive info from unauthd view
+    splashView = [[UIImageView alloc] initWithFrame:CGRectMake(0,0, 320, 480)];
+    splashView.image = [UIImage imageNamed:@"Default.png"];
+    splashView.tag = 24;
+    [window addSubview:splashView];
+    
+    // register successful authentication callbacks.
+    [[NSNotificationCenter defaultCenter] addObserver:self
+                                             selector:@selector(removeSplash:)
+                                                 name:kOSMasterPasswordValidNotification
+                                               object:nil];
+    // authenticate the user
+    CCCryptHelper *crypt = [CCCryptHelper sharedInstance];
+    [crypt promptForMasterPassword];
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application
 {
-    // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
 }
 
 @end

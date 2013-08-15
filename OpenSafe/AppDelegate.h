@@ -11,5 +11,8 @@
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 
 @property (strong, nonatomic) UIWindow *window;
+@property (strong, atomic) UIImageView *splashView;
+
+- (void)removeDefaultSubview:(NSNotification *)notification;
 
 @end
